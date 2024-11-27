@@ -1,0 +1,46 @@
+fn key_expansion(string_key:&str)->Vec<Vec<Vec<u8>>>{
+    let nk=4;
+    let nr=10;
+    let rcon =vec![vec![1,0,0,0],vec![2,0,0,0],vec![4,0,0,0],vec![8,0,0,0],vec![16,0,0,0],vec![32,0,0,0],vec![64,0,0,0],vec![128,0,0,0],vec![27,0,0,0],vec![54,0,0,0]];
+    let key = block_to_state(hex_string_to_blocks(string_key).into_iter().flatten().collect());
+    let rotate_word = |mut x:Vec<u8>| -> Vec<u8> {
+        x.rotate_left(1);
+        x  
+    };
+
+    let sub_word = |x: Vec<u8>| -> Vec<u8> {
+        x.iter()
+         .map(|&a| subbytes::S_BOX[a as usize]) 
+         .collect()
+    };
+
+    let mut w :Vec<Vec<u8>> = key;
+
+    for i in nk..=(4*nr+3){
+
+        let mut temp = w[i-1].clone();
+        if (i%nk) == 0{
+            temp = xor_vecs(&sub_word(rotate_word(temp)) ,&rcon[(i/nk)-1]);
+        }
+        else if (nk>6) && (i%nk == 4){
+            temp = sub_word(temp)
+        }
+        w.push(xor_vecs(&w[i-nk], &temp));
+    }
+
+    let key_expand = w.chunks(4)
+    .map(|x|x.to_vec())
+    .collect::<Vec<Vec<_>>>();
+
+    return key_expand;
+}
+
+fn add_round_key(state: Vec<Vec<u8>>, key: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut modified_state = state;  // Make a mutable copy of state
+    
+    for (a, b) in modified_state.iter_mut().zip(key.iter()) {
+        *a = xor_vecs(a, b);  // Dereference `a` to modify the vector in place
+    }
+    
+    modified_state  // Return the modified state
+}
