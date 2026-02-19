@@ -51,6 +51,40 @@ pub fn decrypt_hex(ciphertext_hex: &str, key_hex: &str) -> Result<String, AesErr
     Ok(out)
 }
 
+pub fn encrypt_bytes(plaintext: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, AesError> {
+    if plaintext.len() % 16 != 0 {
+        return Err(AesError::InvalidBlockLength);
+    }
+
+    let schedule = key_expansion(*key);
+    let mut out = Vec::with_capacity(plaintext.len());
+
+    for chunk in plaintext.chunks_exact(16) {
+        let mut block = [0u8; 16];
+        block.copy_from_slice(chunk);
+        out.extend_from_slice(&encrypt_block(block, &schedule));
+    }
+
+    Ok(out)
+}
+
+pub fn decrypt_bytes(ciphertext: &[u8], key: &[u8; 16]) -> Result<Vec<u8>, AesError> {
+    if ciphertext.len() % 16 != 0 {
+        return Err(AesError::InvalidBlockLength);
+    }
+
+    let schedule = key_expansion(*key);
+    let mut out = Vec::with_capacity(ciphertext.len());
+
+    for chunk in ciphertext.chunks_exact(16) {
+        let mut block = [0u8; 16];
+        block.copy_from_slice(chunk);
+        out.extend_from_slice(&decrypt_block(block, &schedule));
+    }
+
+    Ok(out)
+}
+
 fn encrypt_block(block: [u8; 16], schedule: &KeySchedule) -> [u8; 16] {
     let mut state = add_round_key(block_to_state(block), &schedule[0]);
 
@@ -236,10 +270,36 @@ mod tests {
     }
 
     #[test]
+    fn encrypt_bytes_and_decrypt_bytes_roundtrip() {
+        let key: [u8; 16] = [
+            0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF,
+            0x4F, 0x3C,
+        ];
+        let plaintext: [u8; 16] = [
+            0x6B, 0xC1, 0xBE, 0xE2, 0x2E, 0x40, 0x9F, 0x96, 0xE9, 0x3D, 0x7E, 0x11, 0x73, 0x93,
+            0x17, 0x2A,
+        ];
+        let expected_ciphertext: [u8; 16] = [
+            0x3A, 0xD7, 0x7B, 0xB4, 0x0D, 0x7A, 0x36, 0x60, 0xA8, 0x9E, 0xCA, 0xF3, 0x24, 0x66,
+            0xEF, 0x97,
+        ];
+
+        let ciphertext = encrypt_bytes(&plaintext, &key).unwrap();
+        assert_eq!(ciphertext, expected_ciphertext);
+
+        let recovered = decrypt_bytes(&ciphertext, &key).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
     fn rejects_invalid_input_lengths() {
         let key = "2B7E151628AED2A6ABF7158809CF4F3C";
         assert_eq!(encrypt_hex("0A", key), Err(AesError::InvalidBlockLength));
         assert_eq!(encrypt_hex("0A0", key), Err(AesError::InvalidHexLength));
         assert_eq!(encrypt_hex("0011", "AB"), Err(AesError::InvalidKeyLength));
+        assert_eq!(
+            encrypt_bytes(&[0u8; 3], &[0u8; 16]),
+            Err(AesError::InvalidBlockLength)
+        );
     }
 }
